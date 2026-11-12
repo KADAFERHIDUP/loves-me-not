@@ -2,6 +2,8 @@
 
 Game pixel art kecil yang dibuat dengan Python dan pygame. Cabut kelopak bunga satu per satu sambil bergantian "loves me" dan "loves me not". Kelopak terakhir yang menentukan hasilnya.
 
+**Main langsung di browser (HP atau laptop):** https://kadaferhidup.github.io/loves-me-not/
+
 ![Demo](demo/demo.gif)
 
 ## Fitur
@@ -11,7 +13,7 @@ Game pixel art kecil yang dibuat dengan Python dan pygame. Cabut kelopak bunga s
 - Kelopak yang dicabut jatuh berputar dengan gravitasi dan hambatan udara
 - Jumlah kelopak diacak tiap putaran (9–15), jadi hasil akhirnya juga acak
 
-## Cara menjalankan
+## Cara menjalankan (versi Python)
 
 ```bash
 pip install -r requirements.txt
@@ -25,6 +27,8 @@ python loves_me_not.py
 | Klik kiri / Spasi | Cabut satu kelopak |
 | R | Ulang dengan bunga baru |
 | Esc | Keluar |
+
+Di versi web: ketuk layar untuk mencabut kelopak, dan ketuk lagi setelah selesai untuk mengulang.
 
 ## Tampilan
 

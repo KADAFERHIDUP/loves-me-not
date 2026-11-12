@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Loves me, loves me not</title>
+<meta name="description" content="Cabut kelopaknya satu per satu… loves me, loves me not?">
+<meta property="og:title" content="Loves me, loves me not 🌼">
+<meta property="og:description" content="Cabut kelopaknya satu per satu… loves me, loves me not?">
+<meta property="og:image" content="https://kadaferhidup.github.io/loves-me-not/demo/akhir.png">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#08103a">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌼</text></svg>">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="screen" aria-label="Game loves me, loves me not. Ketuk untuk mencabut kelopak."></canvas>
+<script>
+/* Loves me, loves me not - versi web dari loves_me_not.py (pygame).
+   Gambar dirender piksel demi piksel di resolusi 180x240 lalu diperbesar tajam, sama seperti versi pygame.
+   Kontrol: klik / ketuk / Spasi = cabut satu kelopak, R (atau ketuk setelah selesai) = ulang. */
+'use strict';
+const W = 180, H = 240, N_PETALS = 12, CX = 90, CY = 108, STEM_BOTTOM = [90, 208];
+const LOVES_COLOR = [255, 143, 192], NOT_COLOR = [169, 188, 255], IDLE_COLOR = [192, 224, 36];
+const PETAL_FILL = [255, 250, 245], PETAL_SHADE = [222, 214, 228], PETAL_LINE = [120, 100, 140];
+const CENTER_DARK = [196, 120, 20], CENTER_MID = [240, 176, 30], CENTER_LIGHT = [255, 222, 90];
+const STEM_COLOR = [50, 140, 60], STEM_DARK = [30, 95, 45];
+const TAU = Math.PI * 2;
+
+/* ---------- raster piksel (tanpa anti-aliasing) ---------- */
+const buf = document.createElement('canvas'); buf.width = W; buf.height = H;
+const bctx = buf.getContext('2d');
+const img = bctx.createImageData(W, H);
+const px = new Uint32Array(img.data.buffer);
+const pack = c => (255 << 24) | (c[2] << 16) | (c[1] << 8) | c[0];
+function setPx(x, y, c) { x |= 0; y |= 0; if (x >= 0 && y >= 0 && x < W && y < H) px[y * W + x] = c; }
+function line(x0, y0, x1, y1, c) {
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    setPx(x0, y0, c);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+function polyline(pts, c, width = 1, closed = false) {
+  const n = pts.length, m = closed ? n : n - 1;
+  for (let i = 0; i < m; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    line(a[0], a[1], b[0], b[1], c);
+    if (width > 1) {   // garis tebal 2 piksel, seperti pygame
+      const steep = Math.abs(b[1] - a[1]) > Math.abs(b[0] - a[0]);
+      line(a[0] + (steep ? 1 : 0), a[1] + (steep ? 0 : 1), b[0] + (steep ? 1 : 0), b[1] + (steep ? 0 : 1), c);
+    }
+  }
+}
+function fillPoly(pts, c) {
+  let y0 = Infinity, y1 = -Infinity;
+  for (const p of pts) { y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  y0 = Math.max(0, Math.ceil(y0)); y1 = Math.min(H - 1, Math.floor(y1));
+  const n = pts.length, xs = [];
+  for (let y = y0; y <= y1; y++) {
+    xs.length = 0;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n];
+      if ((a[1] <= y && b[1] > y) || (b[1] <= y && a[1] > y)) xs.push(a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2)
+      for (let x = Math.ceil(xs[k]); x <= Math.floor(xs[k + 1]); x++) setPx(x, y, c);
+  }
+  polyline(pts, c, 1, true);   // tepi ikut terisi, seperti pygame
+}
+function circle(cx, cy, r, c) {
+  for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r) setPx(cx + x, cy + y, c);
+}
+const lerp = (a, b, t) => [0, 1, 2].map(i => Math.trunc(a[i] + (b[i] - a[i]) * t));
+
+/* ---------- dekor statis ---------- */
+const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+function rng(seed) { return () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const BG = new Uint32Array(W * H);
+(function makeBackground() {
+  const top = [8, 12, 58], bottom = [110, 70, 150], bands = 7;
+  for (let y = 0; y < H; y++) {
+    const t = Math.min(1, y / (H * 0.8)), v = t * bands, i = Math.floor(v), frac = v - i;
+    for (let x = 0; x < W; x++) {
+      const k = i + (frac > BAYER[y % 4][x % 4] / 16 ? 1 : 0);
+      px[y * W + x] = pack(lerp(top, bottom, Math.min(k, bands) / bands));
+    }
+  }
+  for (let x = 0; x < W; x++) {   // bukit
+    const ya = Math.trunc(172 + 9 * Math.sin(x * 0.035) + 5 * Math.sin(x * 0.09 + 1));
+    line(x, ya, x, H, pack([28, 38, 110]));
+    const yb = Math.trunc(190 + 4 * Math.sin(x * 0.06 + 2));
+    line(x, yb, x, H, pack([20, 70, 50]));
+  }
+  for (let y = 200; y < H; y++) for (let x = 0; x < W; x++) px[y * W + x] = pack([30, 90, 40]);   // tanah
+  circle(148, 30, 11, pack([250, 240, 200]));   // bulan
+  circle(144, 27, 3, pack([224, 212, 170]));
+  circle(151, 35, 2, pack([224, 212, 170]));
+  BG.set(px);
+})();
+const r4 = rng(4), ri = (a, b) => a + Math.floor(r4() * (b - a + 1));
+const STARS = Array.from({ length: 45 }, () => [ri(2, W - 2), ri(2, 120), r4() * 6.28]);
+const GRASS_C = [[60, 150, 60], [40, 120, 50], [90, 180, 70]];
+const GRASS = Array.from({ length: 140 }, () => [ri(0, W), ri(194, 232), ri(3, 9), pack(GRASS_C[ri(0, 2)]), r4() * 6.28]);
+
+/* ---------- kelopak ---------- */
+function petalPoints(angle, length = 26, width = 9) {
+  const pts = [], steps = 14;
+  const at = (t, sgn) => {
+    const r = 7 + length * t, w = sgn * width * Math.sin(Math.PI * t) * (1 - 0.35 * t);
+    return [CX + Math.cos(angle) * r - Math.sin(angle) * w, CY + Math.sin(angle) * r + Math.cos(angle) * w];
+  };
+  for (let i = 0; i <= steps; i++) pts.push(at(i / steps, 1));
+  for (let i = steps; i >= 0; i--) pts.push(at(i / steps, -1));
+  return pts.map(([x, y]) => [Math.round(x), Math.round(y)]);
+}
+const C_FILL = pack(PETAL_FILL), C_SHADE = pack(PETAL_SHADE), C_LINE = pack(PETAL_LINE);
+function drawPetal(angle, ox = 0, oy = 0, rot = 0) {
+  let pts = petalPoints(angle + rot);
+  if (ox || oy) pts = pts.map(([x, y]) => [x + ox, y + oy]);
+  fillPoly(pts, C_FILL);
+  const half = pts.slice(Math.floor(pts.length / 2));   // bayangan di satu sisi kelopak
+  const shade = half.map(([x, y]) => [Math.floor((x + CX + ox) / 2), Math.floor((y + CY + oy) / 2)]);
+  if (half.length > 2) fillPoly(half.concat(shade.reverse()), C_SHADE);
+  polyline(pts, C_LINE, 1, true);
+}
+const uni = (a, b) => a + Math.random() * (b - a);
+class FallingPetal {
+  constructor(angle) {
+    this.angle = angle; this.x = 0; this.y = 0;
+    this.vx = Math.cos(angle) * 22 + uni(-8, 8); this.vy = -18 + uni(-6, 2);
+    this.rot = 0; this.spin = uni(-3, 3); this.t = 0;
+  }
+  update(dt) {
+    this.t += dt;
+    this.vy = Math.min(this.vy + 60 * dt, 28);   // gravitasi + hambatan udara
+    this.x += (this.vx + 10 * Math.sin(this.t * 4)) * dt;
+    this.vx *= 0.985;
+    this.y += this.vy * dt;
+    this.rot += this.spin * dt;
+  }
+  alive() { return CY + this.y < H + 40; }
+  draw() { drawPetal(this.angle, Math.round(this.x), Math.round(this.y), this.rot); }
+}
+
+/* ---------- state permainan ---------- */
+const game = {
+  reset() {
+    this.n = N_PETALS - 3 + Math.floor(Math.random() * 7);   // jumlah acak = hasil acak
+    const base = Math.random() * TAU;
+    this.petals = Array.from({ length: this.n }, (_, i) => base + i * TAU / this.n);
+    this.falling = []; this.plucked = 0;
+    this.message = 'click to pluck'; this.color = IDLE_COLOR;
+    this.done = false; this.pop = 0;
+  },
+  pluck() {
+    if (this.done || !this.petals.length) return;
+    // cabut kelopak yang paling dekat dengan arah kanan-atas (terasa natural)
+    let idx = 0, best = Infinity;
+    this.petals.forEach((a, i) => { const d = Math.abs(Math.atan2(Math.sin(a + 0.8), Math.cos(a + 0.8))); if (d < best) { best = d; idx = i; } });
+    const angle = this.petals.splice(idx, 1)[0];
+    this.falling.push(new FallingPetal(angle));
+    this.plucked++;
+    const loves = this.plucked % 2 === 1;
+    this.message = loves ? 'loves me' : 'loves me not';
+    this.color = loves ? LOVES_COLOR : NOT_COLOR;
+    this.pop = 1;
+    if (!this.petals.length) { this.done = true; this.message = loves ? 'LOVES ME! <3' : 'loves me not...'; }
+  },
+  update(dt) {
+    this.falling.forEach(p => p.update(dt));
+    this.falling = this.falling.filter(p => p.alive());
+    this.pop = Math.max(0, this.pop - dt * 3);
+  },
+};
+game.reset();
+
+function drawScene(t) {
+  px.set(BG);
+  for (const [x, y, ph] of STARS) {   // bintang berkelip
+    const b = 0.5 + 0.5 * Math.sin(t * 2 + ph), c = lerp([90, 90, 150], [255, 255, 230], b);
+    setPx(x, y, pack(c));
+    if (b > 0.93) { const g = pack(lerp([90, 90, 150], c, 0.6)); setPx(x + 1, y, g); setPx(x - 1, y, g); setPx(x, y + 1, g); setPx(x, y - 1, g); }
+  }
+  const sway = Math.sin(t * 1.3) * 1.5, stem = [];   // batang + daun
+  for (let i = 0; i <= 20; i++) {
+    const k = i / 20;
+    stem.push([Math.round(STEM_BOTTOM[0] + sway * (1 - k) * k * 4 + Math.sin(k * 3) * 2), Math.round(STEM_BOTTOM[1] + (CY - STEM_BOTTOM[1]) * k)]);
+  }
+  polyline(stem.map(([x, y]) => [x + 1, y]), pack(STEM_DARK), 2);
+  polyline(stem, pack(STEM_COLOR), 2);
+  for (const [side, ly] of [[-1, 170], [1, 152]]) {
+    const lx = STEM_BOTTOM[0] + 1;
+    fillPoly([[lx, ly], [lx + side * 9, ly - 6], [lx + side * 17, ly - 4], [lx + side * 10, ly + 1]], pack(STEM_COLOR));
+    line(lx, ly, lx + side * 14, ly - 4, pack(STEM_DARK));
+  }
+  for (const [gx, gy, gh, gc, ph] of GRASS) line(gx, gy, gx + Math.round(Math.sin(t * 2 + ph) * 1.5), gy - gh, gc);   // rumput
+  for (const a of game.petals) drawPetal(a);
+  circle(CX, CY, 9, pack(CENTER_DARK)); circle(CX, CY, 7, pack(CENTER_MID)); circle(CX - 2, CY - 2, 3, pack(CENTER_LIGHT));   // putik
+  for (let i = 0; i < 10; i++) { const a = i * TAU / 10 + 0.3; setPx(Math.round(CX + Math.cos(a) * 5), Math.round(CY + Math.sin(a) * 5), pack(CENTER_DARK)); }
+  game.falling.forEach(p => p.draw());
+  bctx.putImageData(img, 0, 0);
+}
+
+/* ---------- teks piksel (dirender kecil lalu diperbesar tanpa anti-aliasing) ---------- */
+const FONT = 'bold {s}px Consolas, "Courier New", ui-monospace, monospace';
+const textCache = new Map();
+function pixelText(text, size, color) {
+  const key = text + size + color;
+  if (textCache.has(key)) return textCache.get(key);
+  const c = document.createElement('canvas'), g = c.getContext('2d'), f = FONT.replace('{s}', size);
+  g.font = f; const w = Math.max(1, Math.ceil(g.measureText(text).width)), h = Math.ceil(size * 1.25);
+  c.width = w; c.height = h; g.font = f; g.textBaseline = 'middle'; g.fillStyle = `rgb(${color})`; g.fillText(text, 0, h / 2);
+  const d = g.getImageData(0, 0, w, h);
+  for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] > 110 ? 255 : 0;   // tepi tajam seperti font pixel
+  g.putImageData(d, 0, 0);
+  if (textCache.size > 64) textCache.clear();
+  textCache.set(key, c);
+  return c;
+}
+
+const screen = document.getElementById('screen'), sctx = screen.getContext('2d');
+function render(t) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const sw = Math.round(innerWidth * dpr), sh = Math.round(innerHeight * dpr);
+  if (screen.width !== sw || screen.height !== sh) { screen.width = sw; screen.height = sh; }
+  const scale = Math.max(1, Math.floor(Math.min(sw / W, sh / H)));   // skala pixel-perfect
+  const fw = W * scale, fh = H * scale, ox = (sw - fw) >> 1, oy = (sh - fh) >> 1;
+  sctx.imageSmoothingEnabled = false;
+  sctx.fillStyle = '#000'; sctx.fillRect(0, 0, sw, sh);
+  sctx.drawImage(buf, ox, oy, fw, fh);
+  // pesan utama
+  const size = 1 + 0.35 * game.pop, label = pixelText(game.message, 18, game.color), shadow = pixelText(game.message, 18, [20, 10, 40]);
+  const lw = Math.floor(label.width * scale / 2 * size), lh = Math.floor(label.height * scale / 2 * size);
+  const x = ox + ((fw - lw) >> 1), y = oy + Math.floor(36 * scale) - (lh >> 1) + Math.round(Math.sin(t * 3) * scale);
+  sctx.drawImage(shadow, x + scale, y + scale, lw, lh);
+  sctx.drawImage(label, x, y, lw, lh);
+  // petunjuk bawah
+  const hint = game.done ? 'ketuk / R = ulang' : `kelopak tersisa: ${game.petals.length}`;
+  const hc = pixelText(hint, 12, [220, 210, 240]), hw = Math.floor(hc.width * scale / 2), hh = Math.floor(hc.height * scale / 2);
+  sctx.drawImage(hc, ox + ((fw - hw) >> 1), oy + fh - hh - Math.floor(6 * scale), hw, hh);
+}
+
+/* ---------- kontrol ---------- */
+function tap() { if (game.done) game.reset(); else game.pluck(); }
+screen.addEventListener('pointerdown', e => { if (e.button === 0 || e.pointerType !== 'mouse') { e.preventDefault(); tap(); } });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); game.pluck(); }
+  else if (e.key === 'r' || e.key === 'R') game.reset();
+});
+
+let last = performance.now(), t = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+  game.update(dt); drawScene(t); render(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
