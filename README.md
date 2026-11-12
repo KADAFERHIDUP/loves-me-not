@@ -12,6 +12,7 @@ Game pixel art kecil yang dibuat dengan Python dan pygame. Cabut kelopak bunga s
 - Langit malam dengan gradasi dither, bintang berkelip, bulan, bukit, dan rumput yang bergoyang
 - Kelopak yang dicabut jatuh berputar dengan gravitasi dan hambatan udara
 - Jumlah kelopak diacak tiap putaran (9–15), jadi hasil akhirnya juga acak
+- Versi web punya lagu latar chiptune original, efek suara tiap kelopak dicabut, dan jingle penutup (ikon speaker di pojok kiri atas atau tombol M untuk mematikan suara)
 
 ## Cara menjalankan (versi Python)
 
@@ -28,7 +29,7 @@ python loves_me_not.py
 | R | Ulang dengan bunga baru |
 | Esc | Keluar |
 
-Di versi web: ketuk layar untuk mencabut kelopak, dan ketuk lagi setelah selesai untuk mengulang.
+Di versi web: ketuk layar untuk mencabut kelopak, ketuk lagi setelah selesai untuk mengulang, dan ketuk ikon speaker untuk mematikan atau menyalakan suara. Musik mulai setelah sentuhan pertama.
 
 ## Tampilan
 
@@ -36,7 +37,7 @@ Di versi web: ketuk layar untuk mencabut kelopak, dan ketuk lagi setelah selesai
 | --- | --- |
 | ![Awal](demo/awal.png) | ![Akhir](demo/akhir.png) |
 
-Video lengkap: [demo/demo.mp4](demo/demo.mp4)
+Video lengkap dengan suara: [demo/demo.mp4](demo/demo.mp4)
 
 ---
 
